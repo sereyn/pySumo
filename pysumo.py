@@ -1,73 +1,82 @@
+from time import *
 from socket import *
-import numpy as np
-import json
-import sys
-import asyncio
-import struct
-from time import sleep
+import sys, threading, struct
 
-async_loop = asyncio.get_event_loop()
-
-uint8 = np.dtype("uint8").newbyteorder(">")
-uint16LE = np.dtype("uint16").newbyteorder("<")
-uint32LE = np.dtype("uint32").newbyteorder("<")
+_constants = {
+    "ARCOMMANDS_ID_PROJECT_JUMPINGSUMO": 3,
+    "ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING": 0,
+    "ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD": 0,
+    "ARNETWORKAL_FRAME_TYPE_DATA": 2,
+    "BD_NET_CD_NONACK_ID": 10 
+}
 
 class Drone:
     def __init__(self, **kwargs):
         # sockets vars
-        self.ip = ("ip" in kwargs and kwargs["ip"] or "192.168.2.1")
-        self.c2d_port = ("c2d_port" in kwargs and kwargs["c2d_port"] or 54321)
-        self.d2c_port = ("d2c_port" in kwargs and kwargs["d2c_port"] or 43210)
-        self.discovery_port = ("discovery_port" in kwargs and kwargs["discovery_port"] or 44444)
+        self._ip = ("ip" in kwargs and kwargs["ip"] or "192.168.2.1")
+        self._c2d_port = ("c2d_port" in kwargs and kwargs["c2d_port"] or 54321)
+        self._d2c_port = ("d2c_port" in kwargs and kwargs["d2c_port"] or 43210)
+        self._discovery_port = ("discovery_port" in kwargs and kwargs["discovery_port"] or 44444)
 
         # sockets
-        self.c2d_sock = socket(AF_INET, SOCK_DGRAM)
-        self.d2c_sock = socket(AF_INET, SOCK_DGRAM)
-        self.discovery_sock = socket(AF_INET, SOCK_STREAM)
+        self._c2d_sock = socket(AF_INET, SOCK_DGRAM)
+        self._d2c_sock = socket(AF_INET, SOCK_DGRAM)
+        self._discovery_sock = socket(AF_INET, SOCK_STREAM)
 
-        self.pcmd = {}
-        self.seq = 0
+        self._pcmd = 0
 
-    def generate_pcmd(self):
-        buff = bytearray([
-            np.uint8(2), np.uint8(10), np.uint8(self.seq), np.uint32(21).newbyteorder("<"),
-            np.uint8(3), np.uint8(0), np.uint16(0).newbyteorder("<"), np.uint8(1), np.uint8(0), np.uint8(0)
-            ])
-        self.seq += 1
-        self.seq %= 255
-        return buff
-
-    async def start_pcmd(self):
-        while True:
-            self.c2d_sock.send(self.generate_pcmd())
-            print("pcdm")
-            sleep(0.025)
-
-    async def socket_on(self, s, callback):
-        while True:
-            data = await async_loop.sock_recv(s, 1024)
-            self.d2c_handler(data)
-
-    def d2c_handler(self, data):
-        frame = {}
-        [frame["type"], frame["id"], frame["seq"]] = np.frombuffer(data, dtype=uint8, count=3)
-        frame["size"] = np.frombuffer(data, dtype=uint32LE, count=1, offset=3)
-        if frame["size"] > 7:
-            frame["data"] = data[7:int(frame["size"])]
-            print(np.frombuffer(frame["data"], dtype=uint8, count=2))
-            print(np.frombuffer(frame["data"], dtype=uint16LE, count=1, offset=2))
+    def _on_d2c(self):
+        def callback(data):
+            print(data)
+        def on_d2c_thread():
+            while True:
+                data = self._d2c_sock.recv(1024)
+                print("Data> " + data)
+                if data:
+                    callback(data)
+        d2c_sock_thread = threading.Thread(target=on_d2c_thread)
+        d2c_sock_thread.start()
+    
+    def _startPCMD(self):
+        def _startPCMD_thread():
+            while True:
+                time_start = time()
+                buf = struct.pack(">BBBIBBHBbb", 
+                    _constants["ARNETWORKAL_FRAME_TYPE_DATA"],
+                    _constants["BD_NET_CD_NONACK_ID"],
+                    self._pcmd,
+                    4294967295-struct.calcsize(">BBBIBBHBbb"),
+                    _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], 
+                    _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 
+                    255-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"],
+                    1,
+                    0,
+                    0 
+                    )
+                self._c2d_sock.send(buf)
+                self._pcmd += 1
+                duration = time()-time_start
+                sleep(max(0, 0.025-duration))
+        PCMD_thread = threading.Thread(target=_startPCMD_thread)
+        PCMD_thread.start()
+        
     def connect(self):
         try:
-            self.discovery_sock.connect((self.ip, self.discovery_port))
+            self._discovery_sock.connect((self._ip, self._discovery_port))
         except:
             print("PySumo> Connexion impossible, etes-vous connecte au drone ? (wifi)")
             sys.exit()
-        self.discovery_sock.sendall("{'controller_type':'computer','controller_name':'pysumo','d2c_port':'43210'}".encode("utf_8").strip())
-        discovery_data = self.discovery_sock.recv(1024)
-        print("PySumo> Drone trouve")
-        self.d2c_sock.bind(("", self.d2c_port))
-        asyncio.gather(self.generate_pcmd(), self.socket_on(self.d2c_sock, self.d2c_handler))
+        print("PySumo> Connecte")
+        self._discovery_sock.sendall("{'controller_type':'computer','controller_name':'pysumo','d2c_port':'43210'}".encode("utf_8"))
+        discovery_data = self._discovery_sock.recv(1024)
+        print("DiscoveryData> " + discovery_data)
+        print("PySumo> Associe")
+        self._d2c_sock.bind(("", self._d2c_port))
+        self._on_d2c()
+        #self._startPCMD()
 
 s = Drone()
 
 s.connect()
+
+print("end of script")
