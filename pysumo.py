@@ -30,8 +30,8 @@ class Drone:
             print(data)
         def on_d2c_thread():
             while True:
-                data = self._d2c_sock.recv(1024)
-                print("Data> " + data)
+                data = self._d2c_sock.recv(32768)
+                print("Data> " + str(data))
                 if data:
                     callback(data)
         d2c_sock_thread = threading.Thread(target=on_d2c_thread)
@@ -52,10 +52,11 @@ class Drone:
                     1,
                     0,
                     0 
-                    )
+                )
                 self._c2d_sock.send(buf)
                 self._pcmd += 1
                 duration = time()-time_start
+                print(duration)
                 sleep(max(0, 0.025-duration))
         PCMD_thread = threading.Thread(target=_startPCMD_thread)
         PCMD_thread.start()
@@ -69,11 +70,12 @@ class Drone:
         print("PySumo> Connecte")
         self._discovery_sock.sendall("{'controller_type':'computer','controller_name':'pysumo','d2c_port':'43210'}".encode("utf_8"))
         discovery_data = self._discovery_sock.recv(1024)
-        print("DiscoveryData> " + discovery_data)
+        print("DiscoveryData> " + discovery_data.decode("utf-8"))
         print("PySumo> Associe")
         self._d2c_sock.bind(("", self._d2c_port))
+        self._c2d_sock.connect((self._ip, self._c2d_port))
         self._on_d2c()
-        #self._startPCMD()
+        self._startPCMD()
 
 s = Drone()
 
