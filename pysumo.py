@@ -30,7 +30,7 @@ class Drone:
             print(data)
         def on_d2c_thread():
             while True:
-                data = self._d2c_sock.recv(32768)
+                data = self._d2c_sock.recv(4096)
                 print("Data> " + str(data))
                 if data:
                     callback(data)
@@ -41,22 +41,12 @@ class Drone:
         def _startPCMD_thread():
             while True:
                 time_start = time()
-                buf = struct.pack(">BBBIBBHBbb", 
-                    _constants["ARNETWORKAL_FRAME_TYPE_DATA"],
-                    _constants["BD_NET_CD_NONACK_ID"],
-                    self._pcmd,
-                    4294967295-struct.calcsize(">BBBIBBHBbb"),
-                    _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], 
-                    _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 
-                    255-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"],
-                    1,
-                    0,
-                    0 
-                )
+                buf = struct.pack(">BBBIBBHBbb", _constants["ARNETWORKAL_FRAME_TYPE_DATA"], _constants["BD_NET_CD_NONACK_ID"], self._pcmd, 4294967295-struct.calcsize(">BBBIBBHBbb")*8, _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 255-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"], 1, 0, 0)
                 self._c2d_sock.send(buf)
                 self._pcmd += 1
                 duration = time()-time_start
-                print(duration)
+                if duration != 0:
+                    print(duration)
                 sleep(max(0, 0.025-duration))
         PCMD_thread = threading.Thread(target=_startPCMD_thread)
         PCMD_thread.start()
@@ -79,6 +69,4 @@ class Drone:
 
 s = Drone()
 
-s.connect()
-
-print("end of script")
+#s.connect()
