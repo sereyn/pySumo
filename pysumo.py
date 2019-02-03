@@ -7,7 +7,11 @@ _constants = {
     "ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING": 0,
     "ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD": 0,
     "ARNETWORKAL_FRAME_TYPE_DATA": 2,
-    "BD_NET_CD_NONACK_ID": 10 
+    "BD_NET_CD_NONACK_ID": 10,
+    "BD_NET_DC_EVENT_ID": 126,
+    "ARCOMMANDS_ID_PROJECT_COMMON": 0,
+    "ARCOMMANDS_ID_COMMON_CLASS_COMMONSTATE": 5,
+    "ARCOMMANDS_ID_COMMON_COMMONSTATE_CMD_BATTERYSTATECHANGED": 1
 }
 
 class Drone:
@@ -25,13 +29,21 @@ class Drone:
 
         self._pcmd = 0
 
+        # globals
+        self.battery = -1
+
     def _on_d2c(self):
         def callback(data):
-            print(data)
+           t, i, s, size = struct.unpack("<BBBI", data[:7])
+           if i == _constants["BD_NET_DC_EVENT_ID"]:
+               cmdP, cmdC, cmdI = struct.unpack("<BBH", data[7:11])
+               if cmdP == _constants["ARCOMMANDS_ID_PROJECT_COMMON"]:
+                   if cmdC == _constants["ARCOMMANDS_ID_COMMON_CLASS_COMMONSTATE"]:
+                       if cmdI == _constants["ARCOMMANDS_ID_COMMON_COMMONSTATE_CMD_BATTERYSTATECHANGED"]:
+                           (self.battery) = struct.unpack("<B", data[11:12])
         def on_d2c_thread():
             while True:
                 data = self._d2c_sock.recv(4096)
-                print("Data> " + str(data))
                 if data:
                     callback(data)
         d2c_sock_thread = threading.Thread(target=on_d2c_thread)
@@ -41,12 +53,20 @@ class Drone:
         def _startPCMD_thread():
             while True:
                 time_start = time()
-                buf = struct.pack(">BBBIBBHBbb", _constants["ARNETWORKAL_FRAME_TYPE_DATA"], _constants["BD_NET_CD_NONACK_ID"], self._pcmd, 4294967295-struct.calcsize(">BBBIBBHBbb")*8, _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 255-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"], 1, 0, 0)
+                buf = struct.pack(">BBBIBBHBbb", 
+                    _constants["ARNETWORKAL_FRAME_TYPE_DATA"], 
+                    _constants["BD_NET_CD_NONACK_ID"], 
+                    self._pcmd, 
+                    4294967295-struct.calcsize(">BBBIBBHBbb")*8, 
+                    _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], 
+                    _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 
+                    65535-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"], 
+                    1, 0, 0)
                 self._c2d_sock.send(buf)
                 self._pcmd += 1
+                if self._pcmd > 255:
+                    self._pcmd = 0
                 duration = time()-time_start
-                if duration != 0:
-                    print(duration)
                 sleep(max(0, 0.025-duration))
         PCMD_thread = threading.Thread(target=_startPCMD_thread)
         PCMD_thread.start()
@@ -69,4 +89,8 @@ class Drone:
 
 s = Drone()
 
-#s.connect()
+s.connect()
+
+while True:
+    print(s.battery)
+    sleep(2)
