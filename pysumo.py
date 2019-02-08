@@ -27,7 +27,9 @@ class Drone:
         self._d2c_sock = socket(AF_INET, SOCK_DGRAM)
         self._discovery_sock = socket(AF_INET, SOCK_STREAM)
 
-        self._pcmd = 0
+        # packets
+        self._seq = 0
+        self._pcmd = {"flag": 1, "speed": 100, "turn": 0}
 
         # globals
         self.battery = -1
@@ -40,7 +42,7 @@ class Drone:
                if cmdP == _constants["ARCOMMANDS_ID_PROJECT_COMMON"]:
                    if cmdC == _constants["ARCOMMANDS_ID_COMMON_CLASS_COMMONSTATE"]:
                        if cmdI == _constants["ARCOMMANDS_ID_COMMON_COMMONSTATE_CMD_BATTERYSTATECHANGED"]:
-                           (self.battery) = struct.unpack("<B", data[11:12])
+                           self.battery = struct.unpack("<B", data[11:12])
         def on_d2c_thread():
             while True:
                 data = self._d2c_sock.recv(4096)
@@ -56,16 +58,16 @@ class Drone:
                 buf = struct.pack(">BBBIBBHBbb", 
                     _constants["ARNETWORKAL_FRAME_TYPE_DATA"], 
                     _constants["BD_NET_CD_NONACK_ID"], 
-                    self._pcmd, 
-                    4294967295-struct.calcsize(">BBBIBBHBbb")*8, 
+                    self._seq, 
+                    4294967295-struct.calcsize(">BBBIBBHBbb")*8,
                     _constants["ARCOMMANDS_ID_PROJECT_JUMPINGSUMO"], 
                     _constants["ARCOMMANDS_ID_JUMPINGSUMO_CLASS_PILOTING"], 
-                    65535-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"], 
-                    1, 0, 0)
+                    65535-_constants["ARCOMMANDS_ID_JUMPINGSUMO_PILOTING_CMD_PCMD"],
+                    self._pcmd["flag"], 100, self._pcmd["turn"])
                 self._c2d_sock.send(buf)
-                self._pcmd += 1
-                if self._pcmd > 255:
-                    self._pcmd = 0
+                self._seq += 1
+                if self._seq > 255:
+                    self._seq = 0
                 duration = time()-time_start
                 sleep(max(0, 0.025-duration))
         PCMD_thread = threading.Thread(target=_startPCMD_thread)
